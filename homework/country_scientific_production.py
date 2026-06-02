@@ -1,107 +1,125 @@
-# country_scientific_production.py
-
 import os
-
-import folium  # type: ignore
-import pandas as pd  # type: ignore
+import pandas as pd
+import folium
 
 
 def load_affiliations():
-    """Carga el archivo scopus-papers.csv y retorna un dataframe con la
-    columna 'Affiliations'"""
+    """Carga los datos de Scopus."""
 
     dataframe = pd.read_csv(
         (
-            "https://raw.githubusercontent.com/jdvelasq/datalabs/"
-            "master/datasets/scopus-papers.csv"
-        ),
-        sep=",",
-        index_col=None,
-    )[["Affiliations"]]
-    return dataframe
+            "https://raw.githubusercontent.com/jdvelasq/"
+            "datalabs/master/datasets/scopus-papers.csv"
+        )
+    )
+
+    return dataframe[["Affiliations"]]
 
 
 def remove_na_rows(affiliations):
-    """Elimina las filas con valores nulos en la columna 'Affiliations'"""
+    """Elimina filas con valores nulos."""
 
-    affiliations = affiliations.copy()
-    affiliations = affiliations.dropna(subset=["Affiliations"])
-
-    return affiliations
+    return affiliations.dropna(subset=["Affiliations"])
 
 
 def add_countries_column(affiliations):
-    """Transforma la columna 'Affiliations' a una lista de paises."""
+    """Extrae países de las afiliaciones."""
 
     affiliations = affiliations.copy()
-    affiliations["countries"] = affiliations["Affiliations"].copy()
-    affiliations["countries"] = affiliations["countries"].str.split(";")
-    affiliations["countries"] = affiliations["countries"].map(
-        lambda x: [y.split(",") for y in x]
+
+    affiliations["countries"] = affiliations["Affiliations"].apply(
+        lambda x: list(
+            set(
+                [
+                    affiliation.split(",")[-1].strip()
+                    for affiliation in x.split(";")
+                ]
+            )
+        )
     )
-    affiliations["countries"] = affiliations["countries"].map(
-        lambda x: [y[-1].strip() for y in x]
-    )
-    affiliations["countries"] = affiliations["countries"].map(set)
-    affiliations["countries"] = affiliations["countries"].str.join(", ")
 
     return affiliations
 
 
 def clean_countries(affiliations):
+    """Corrige nombres de países."""
 
     affiliations = affiliations.copy()
-    affiliations["countries"] = affiliations["countries"].str.replace(
-        "United States", "United States of America"
+
+    affiliations["countries"] = affiliations["countries"].apply(
+        lambda countries: [
+            (
+                "United States of America"
+                if country == "United States"
+                else country
+            )
+            for country in countries
+        ]
     )
+
     return affiliations
 
 
 def count_country_frequency(affiliations):
-    """Cuenta la frecuencia de cada país en la columna 'countries'"""
+    """Cuenta frecuencia de países."""
 
-    countries = affiliations["countries"].copy()
-    countries = countries.str.split(", ")
-    countries = countries.explode()
+    countries = affiliations["countries"].explode()
+
     countries = countries.value_counts()
+
+    countries = countries.rename_axis("countries")
+
+    countries = countries.reset_index(name="count")
+
     return countries
 
 
 def plot_world_map(countries):
-    """Grafica un mapa mundial con la frecuencia de cada país."""
+    """Genera mapa mundial."""
 
-    countries = countries.copy()
-    countries = countries.to_frame()
-    countries = countries.reset_index()
-
-    m = folium.Map(location=[0, 0], zoom_start=2)
+    world_map = folium.Map(
+        location=[20, 0],
+        zoom_start=2,
+    )
 
     folium.Choropleth(
         geo_data=(
-            "https://raw.githubusercontent.com/python-visualization/"
-            "folium/master/examples/data/world-countries.json"
+            "https://raw.githubusercontent.com/"
+            "python-visualization/folium/master/"
+            "examples/data/world-countries.json"
         ),
         data=countries,
         columns=["countries", "count"],
         key_on="feature.properties.name",
-        fill_color="Greens",
-    ).add_to(m)
+        fill_color="YlGn",
+        fill_opacity=0.7,
+        line_opacity=0.2,
+        legend_name="Scientific Production",
+    ).add_to(world_map)
 
-    m.save("files/map.html")
+    world_map.save("files/map.html")
 
 
 def make_worldmap():
-    """Función principal"""
+    """Función principal."""
 
-    if not os.path.exists("files"):
-        os.makedirs("files")
+    os.makedirs("files/output", exist_ok=True)
 
     affiliations = load_affiliations()
+
     affiliations = remove_na_rows(affiliations)
+
     affiliations = add_countries_column(affiliations)
+
     affiliations = clean_countries(affiliations)
+
     countries = count_country_frequency(affiliations)
-    countries.to_csv("files/countries.csv")
+
+    countries.to_csv(
+        "files/output/countries.csv",
+        index=False,
+    )
+
     plot_world_map(countries)
 
 
